@@ -1,34 +1,3 @@
-/*
-  Library for the MMA8452Q
-  By: Jim Lindblom and Andrea DeVore
-  SparkFun Electronics
-
-  Do you like this library? Help support SparkFun. Buy a board!
-  https://www.sparkfun.com/products/14587
-
-  This sketch uses the SparkFun_MMA8452Q library to initialize
-  the accelerometer, change the output data date, and stream
-  calculated x, y, z, acceleration values from it (in g units).
-
-  Hardware hookup:
-  Arduino --------------- MMA8452Q Breakout
-    3.3V  ---------------     3.3V
-    GND   ---------------     GND
-  SDA (A4) --\/330 Ohm\/--    SDA
-  SCL (A5) --\/330 Ohm\/--    SCL
-
-  The MMA8452Q is a 3.3V max sensor, so you'll need to do some
-  level-shifting between the Arduino and the breakout. Series
-  resistors on the SDA and SCL lines should do the trick.
-
-  License: This code is public domain, but if you see me
-  (or any other SparkFun employee) at the local, and you've
-  found our code helpful, please buy us a round (Beerware
-  license).
-
-  Distributed as is; no warrenty given.
-*/
-
 #include <Wire.h>                 // Must include Wire library for I2C
 #include "SparkFun_MMA8452Q.h"    // Click here to get the library: http://librarymanager/All#SparkFun_MMA8452Q
 #include <arduinoFFT.h>
@@ -41,6 +10,19 @@ unsigned int sampling_period_us;
 unsigned long microseconds;
 double vImag[SAMPLES];
 double magnitude[SAMPLES];
+
+double vImag2[SAMPLES];
+double magnitude2[SAMPLES];
+double accel_val = 0;
+double emg_val = 0;
+double peak = 0;
+double peak2 = 0;
+double peakAvg = 0;
+double peakTemp = 0;
+int count = 0;
+double peakAvg2 = 0;
+double peakTemp2 = 0;
+int count2 = 0;
 
 MMA8452Q accel;                   // create instance of the MMA8452 class
 arduinoFFT FFT = arduinoFFT();    // create FFT instance 
@@ -55,19 +37,12 @@ void setup() {
     while (1);
   }
 
-  /* Default output data rate (ODR) is 800 Hz (fastest)
-     Set data rate using ODR_800, ODR_400, ODR_200, 
-     ODR_100, ODR_50, ODR_12, ODR_6, ODR_1
-     Sets data rate to 800, 400, 200, 100, 50, 12.5, 
-     6.25, or 1.56 Hz respectively 
-     See data sheet for relationship between voltage
-     and ODR (pg. 7)
-     https://cdn.sparkfun.com/datasheets/Sensors/Accelerometers/MMA8452Q-rev8.1.pdf */
-  accel.setDataRate(ODR_100);
+  accel.setDataRate(ODR_400);
+  accel.setScale(SCALE_2G);
   sampling_period_us = round(1000000*(1.0/SAMPLING_FREQUENCY));
 }
 
-void loop() {
+double getAccel() {
   if (accel.available()) {      // Wait for new data from accelerometer
 
 
@@ -76,7 +51,7 @@ void loop() {
     {
         microseconds = micros();    //Overflows after around 70 minutes!
         double val = (accel.getCalculatedX()*accel.getCalculatedX()) + (accel.getCalculatedY()*accel.getCalculatedY()) + (accel.getCalculatedZ()*accel.getCalculatedZ());
-        magnitude[i]= sqrt(val);        
+        magnitude[i]= sqrt(val);      
         vImag[i] = 0;
      
         while(micros() < (microseconds + sampling_period_us)){
@@ -84,14 +59,74 @@ void loop() {
     }
 
      /*FFT-x*/
-    FFT.Windowing(magnitude, SAMPLES, FFT_WIN_TYP_HAMMING, FFT_FORWARD);
+    FFT.Windowing(magnitude, SAMPLES, FFT_WIN_TYP_HANN, FFT_FORWARD);
     FFT.Compute(magnitude, vImag, SAMPLES, FFT_FORWARD);
     FFT.ComplexToMagnitude(magnitude, vImag, SAMPLES);
     double peak = FFT.MajorPeak(magnitude, SAMPLES, SAMPLING_FREQUENCY);
-    
-    /*PRINT RESULTS*/
-    Serial.println("Nyquist frequency is: ");     //Print out what frequency is the most dominant.
-    Serial.println(peak);
-
+    peak = peak - (2*9.81);
+    peakTemp += peak; 
+    count = count + 1; 
+    if (count == 1){
+      peakAvg = peakTemp/1;
+      count = 0;
+      peakTemp = 0;
+    }
+    return peakAvg;
   }
+}
+
+
+
+double getEMG() {
+    // read the input on analog pin 0:
+  int sensorValue = analogRead(A0);
+  // Convert the analog reading (which goes from 0 - 1023) to a voltage (0 - 5V):
+  float voltage = sensorValue * (5.0 / 1023.0);
+  // print out the value you read:
+  Serial.println(voltage);
+  delay(1);
+
+  /*SAMPLING*/
+    for(int i=0; i<SAMPLES; i++)
+    {
+        microseconds = micros();    //Overflows after around 70 minutes!
+        magnitude2[i]= voltage;        
+        vImag2[i] = 0;
+     
+        while(micros() < (microseconds + sampling_period_us)){
+        }
+    }
+
+     /*FFT-x*/
+    FFT.Windowing(magnitude2, SAMPLES, FFT_WIN_TYP_HANN, FFT_FORWARD);
+    FFT.Compute(magnitude2, vImag2, SAMPLES, FFT_FORWARD);
+    FFT.ComplexToMagnitude(magnitude2, vImag2, SAMPLES);
+    double peak2 = FFT.MajorPeak(magnitude2, SAMPLES, SAMPLING_FREQUENCY);
+     /*PRINT RESULTS*/
+    // Serial.println("Nyquist frequency of EMG is: ");     //Print out what frequency is the most dominant.
+    // Serial.println(peak2);
+
+    peakTemp2 += peak2; 
+    count2 = count2 + 1; 
+    if (count2 == 1){
+      peakAvg2 = peakTemp2/1;
+      count2 = 0;
+      peakTemp2 = 0;
+    }
+    return peakAvg2;
+}
+
+//main 
+void loop(){
+  accel_val = getAccel();
+
+  if (accel_val < 13.9 and accel_val > 8.1){
+    // Serial.println("There is ET vibration: ");
+    // Serial.println("Suppression has begun");
+  }
+  delay(5);
+  
+  // emg_val = getEMG();
+  // Serial.println("The calculated frequency is: ");     //Print out what frequency is the most dominant.
+  Serial.println(accel_val);
 }
