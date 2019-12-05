@@ -23,11 +23,15 @@ int count = 0;
 double peakAvg2 = 0;
 double peakTemp2 = 0;
 int count2 = 0;
+int motor_pin = 5;
+int pot_pin = A1; //set potentiometer pin
+int output, motor_val; //used with pot control 
 
 MMA8452Q accel;                   // create instance of the MMA8452 class
 arduinoFFT FFT = arduinoFFT();    // create FFT instance 
 
 void setup() {
+  pinMode(motor_pin, OUTPUT);
   Serial.begin(9600);
   Serial.println("MMA8452Q Change Output Data Rate Code!");
   Wire.begin();
@@ -116,17 +120,45 @@ double getEMG() {
     return peakAvg2;
 }
 
+void motors()
+{
+
+    for(int i=0; i<255; i++)
+    {
+      analogWrite(motor_pin, 255); //spin motors at 150 speed
+      if (i == 128) //halfway through the loop, check hz again
+        accel_val = getAccel();
+        if (accel_val < 13.9 and accel_val > 8.1){
+          motors(); //re-call motors()
+        }
+        else{ //if not within range, slow motors down
+          for(int i=255; i>0; i--){
+            analogWrite(motor_pin, i);
+            delay(2);
+        }
+      }
+
+  }
+}
+
 //main 
 void loop(){
   accel_val = getAccel();
-
-  if (accel_val < 13.9 and accel_val > 8.1){
-    // Serial.println("There is ET vibration: ");
-    // Serial.println("Suppression has begun");
-  }
-  delay(5);
-  
-  // emg_val = getEMG();
-  // Serial.println("The calculated frequency is: ");     //Print out what frequency is the most dominant.
+  Serial.println("The calculated frequency is: ");     //Print out what avg frequency is the most dominant.
   Serial.println(accel_val);
+  // delay(5);
+  if (accel_val < 13.9 and accel_val > 8.1){
+    Serial.println("There is ET vibration: ");
+    Serial.println("Suppression has begun");
+    motors(); 
+  }
+    // if the value is within ET range, spin the motors
+  // Control from pot (incomplete logic): 
+  //Reading from potentiometer
+  // output = analogRead(pot_pin);
+  // motor_val = map(output, 0, 1023, 0, 255); // Map the potentiometer value from 0 to 255
+  // analogWrite(motor_pin, motor_val); //write pot value to motor
+  // delay(1);
+  // emg_val = getEMG();
+ 
 }
